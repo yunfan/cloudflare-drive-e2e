@@ -1,0 +1,6 @@
+{
+  "name": "Cloudflare R2 Web Drive",
+  "description": "A simple cloud storage drive designed to be easily deployed to Cloudflare Workers with R2 storage.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

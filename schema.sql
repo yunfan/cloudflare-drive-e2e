@@ -1,0 +1,16 @@
+CREATE TABLE IF NOT EXISTS files (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    total_chunks INTEGER NOT NULL,
+    salt TEXT NOT NULL,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS inodes (
+    id TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    r2_key TEXT NOT NULL,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+);
