@@ -1,40 +1,51 @@
-interface Env { MY_BUCKET: R2Bucket; DB: D1Database; }
-interface Context { request: Request; env: Env; params: Record<string, string>; }
+interface Env { KV_STORE: KVNamespace; DB: D1Database; }
+interface Context { request: Request; env: Env; }
 
 export async function onRequestPut({ request, env }: Context) {
   const url = new URL(request.url);
-  const fileId = url.searchParams.get('fileId');
+  const chunkPrefix = url.searchParams.get('prefix');
   const index = parseInt(url.searchParams.get('index') || '0', 10);
+  const backend = url.searchParams.get('backend') || 'KV';
   
-  if (!fileId) return new Response('Bad Request', { status: 400 });
+  // Clean worker proxied logic without tokens
+  if (!chunkPrefix) return new Response('Bad Request', { status: 400 });
   if (!request.body) return new Response('Missing body', { status: 400 });
+
+  const kvKey = `${chunkPrefix}_${index}`;
   
-  const r2Key = `inode_${fileId}_${index}`;
-  await env.MY_BUCKET.put(r2Key, request.body);
-  
-  const inodeId = crypto.randomUUID();
-  await env.DB.prepare(
-    'INSERT INTO inodes (id, file_id, chunk_index, r2_key) VALUES (?, ?, ?, ?)'
-  ).bind(inodeId, fileId, index, r2Key).run();
+  if (backend === 'D1') {
+      const buffer = await request.arrayBuffer();
+      // Use parameterised query binding to write up to 2MB BLOB per row entirely free from SQL length constraints
+      await env.DB.prepare('INSERT INTO d1_chunks (chunk_key, chunk_data) VALUES (?, ?)').bind(kvKey, buffer).run();
+  } else {
+      await env.KV_STORE.put(kvKey, request.body);
+  }
   
   return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
 }
 
 export async function onRequestGet({ request, env }: Context) {
   const url = new URL(request.url);
-  const fileId = url.searchParams.get('fileId');
+  const chunkPrefix = url.searchParams.get('prefix');
   const index = parseInt(url.searchParams.get('index') || '0', 10);
+  const backend = url.searchParams.get('backend') || 'KV';
   
-  if (!fileId) return new Response('Bad Request', { status: 400 });
+  if (!chunkPrefix) return new Response('Bad Request', { status: 400 });
   
-  const record = await env.DB.prepare('SELECT r2_key FROM inodes WHERE file_id = ? AND chunk_index = ?').bind(fileId, index).first();
-  if (!record || !record.r2_key) return new Response('Not found in DB', { status: 404 });
-  
-  const object = await env.MY_BUCKET.get(record.r2_key as string);
-  if (!object) return new Response('Not found in R2', { status: 404 });
+  let objectStream: any;
+  if (backend === 'D1') {
+      const row = await env.DB.prepare('SELECT chunk_data FROM d1_chunks WHERE chunk_key = ?').bind(`${chunkPrefix}_${index}`).first();
+      if (!row || !row.chunk_data) return new Response('Not found in D1', { status: 404 });
+      objectStream = row.chunk_data; // This is a raw ArrayBuffer mapped from the SQLite BLOB
+  } else {
+      objectStream = await env.KV_STORE.get(`${chunkPrefix}_${index}`, 'stream');
+      if (!objectStream) return new Response('Not found in KV', { status: 404 });
+  }
   
   const headers = new Headers();
   headers.set('Access-Control-Allow-Origin', '*');
+  // Instruct caching since we use obfuscated immutable prefix keys
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   
-  return new Response(object.body as unknown as ReadableStream, { headers });
+  return new Response(objectStream, { headers });
 }
