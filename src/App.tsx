@@ -8,6 +8,17 @@ import { CHUNK_SIZE, deriveKey, encryptChunk, decryptChunk, bufToBase64, base64T
 type ViewMode = 'drive' | 'code' | 'share';
 type FileData = { id: string; name: string; type: 'file' | 'folder'; parent_id: string | null; size: number; total_chunks: number; uploaded_at: string; salt: string; chunk_prefix: string; storage_backend: string; };
 
+const parseSQLiteDate = (dbDate: string) => {
+    if (!dbDate) return '';
+    // Safari robustly requires standard ISO format, SQLite gives "YYYY-MM-DD HH:MM:SS"
+    const isoDate = dbDate.replace(' ', 'T') + 'Z';
+    try {
+        return format(new Date(isoDate), 'MMM d, yyyy');
+    } catch(e) {
+        return dbDate.split(' ')[0];
+    }
+};
+
 export default function App() {
   const pathname = window.location.pathname;
   const match = pathname.match(/^\/share\/([^\/]+)/);
@@ -27,9 +38,6 @@ export default function App() {
   // File Tree State
   const [history, setHistory] = useState<{id: string | null, name: string}[]>([{ id: null, name: 'My Drive' }]);
   const currentFolderId = history[history.length - 1].id;
-  
-  // R2 Public URL Settings
-  const [r2PublicUrl, setR2PublicUrl] = useState<string>(localStorage.getItem('PUBLIC_R2_URL') || '');
 
   useEffect(() => {
     if (initialSharedId) {
@@ -384,7 +392,7 @@ export default function App() {
                               {item.type === 'file' && <span>{formatBytes(item.size)}</span>}
                               {item.type === 'file' && <span className="border border-neutral-300 px-1 py-0.5 rounded text-[10px] tracking-wider text-neutral-500 font-bold bg-white">{item.storage_backend || 'KV'}</span>}
                               {item.type === 'file' && <span>•</span>}
-                              <span>{format(new Date(item.uploaded_at), 'MMM d, yyyy')}</span>
+                              <span>{parseSQLiteDate(item.uploaded_at)}</span>
                             </div>
                           </div>
                         </div>

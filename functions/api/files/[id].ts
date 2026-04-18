@@ -68,5 +68,5 @@ export async function onRequestDelete({ env, params }: Context) {
   const listed = await env.KV_STORE.list({ prefix: 'tree_cache_' });
   await Promise.all(listed.keys.map(k => env.KV_STORE.delete(k.name)));
   
-  return new Response(JSON.stringify({ success: true, deletedItems: ids.length, deletedChunks: keys.length }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ success: true, deletedItems: ids.length, deletedChunks: kvKeys.length + d1Keys.length }), { headers: { "Content-Type": "application/json" } });
 }
